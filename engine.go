@@ -13,7 +13,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/walterwanderley/xo-grpc/metadata"
+	"github.com/timdadd/xo-grpc/metadata"
 
 	"golang.org/x/tools/imports"
 )
@@ -23,6 +23,7 @@ var templates embed.FS
 
 func process(def *metadata.Definition, outPath string) error {
 	rootPath := "templates"
+	var templates = os.DirFS(".")
 	return fs.WalkDir(templates, rootPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			fmt.Println("ERROR ", err.Error())
@@ -39,6 +40,12 @@ func process(def *metadata.Definition, outPath string) error {
 					return err
 				}
 			}
+			return nil
+		}
+
+		// find xo-grpc templates
+		if filepath.Ext(path) == ".tpl" {
+			fmt.Printf("Ignoring XO template: %s\n", d.Name())
 			return nil
 		}
 

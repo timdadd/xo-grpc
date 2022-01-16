@@ -19,7 +19,7 @@ go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2@latest
 ### Installation
 
 ```sh
-go install github.com/walterwanderley/xo-grpc@latest
+go install github.com/timdadd/xo-grpc@latest
 ```
 
 ### Example
@@ -48,6 +48,6 @@ go run . -db [Database Connection URL] -dev -grpcui
 - gRPC UI [http://localhost:5000/grpcui](http://localhost:5000/grpcui)
 - Swagger UI [http://localhost:5000/swagger](http://localhost:5000/swagger)
 
-### Similar Projects
-
-- [sqlc-grpc](https://github.com/walterwanderley/sqlc-grpc)
+### Walter Wanderly
+This is a fork of Walter Wanderly's xo-grpc before migration from protoc to buf 
+with a few modifications to templates for my own purposes 

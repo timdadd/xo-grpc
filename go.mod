@@ -1,6 +1,6 @@
-module github.com/walterwanderley/xo-grpc
+module github.com/timdadd/xo-grpc
 
-go 1.16
+go 1.17
 
 require (
 	github.com/gogo/protobuf v1.3.2

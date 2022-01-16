@@ -13,7 +13,7 @@ import (
 
 	"golang.org/x/mod/modfile"
 
-	"github.com/walterwanderley/xo-grpc/metadata"
+	"github.com/timdadd/xo-grpc/metadata"
 )
 
 var (
@@ -190,5 +190,5 @@ func printHelp() {
 	fmt.Println("xo-grpc [flags] modelsPath")
 	fmt.Println("\nflags:")
 	flag.PrintDefaults()
-	fmt.Println("\nFor more information, please visit https://github.com/walterwanderley/xo-grpc")
+	fmt.Println("\nFor more information, please visit https://github.com/timdadd/xo-grpc")
 }
