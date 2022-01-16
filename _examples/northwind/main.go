@@ -13,10 +13,10 @@ import (
 	"syscall"
 
 	"go.opentelemetry.io/otel"
+	semconv "go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/jaeger"
 	"go.opentelemetry.io/otel/sdk/resource"
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 	"go.uber.org/automaxprocs/maxprocs"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -68,6 +68,10 @@ func main() {
 	if err != nil {
 		log.Fatal("failed to open DB", zap.Error(err))
 	}
+	db, err := sql.Ping()
+	if err != nil {
+		log.Fatal("failed to ping DB", zap.Error(err))
+	}
 
 	srv := server.New(cfg, log, registerServer(log, db), registerHandlers(), openAPISpec)
 
@@ -111,7 +115,7 @@ func logger(dev bool) *zap.Logger {
 			for i, arg := range args {
 				params[i] = fmt.Sprintf("%v", arg)
 			}
-			log.Debug(fmt.Sprintf("%s; Params -> [%s]", s, strings.Join(params, ", ")))
+			log.Debug(fmt.Sprintf("%s: [%s]", s, strings.Join(params, ", ")))
 		})
 	}
 	return log
