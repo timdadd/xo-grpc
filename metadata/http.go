@@ -23,7 +23,7 @@ func (s *Service) httpMethod() string {
 	switch s.Name {
 	case "Insert", "Upsert":
 		return "post"
-	case "Delete":
+	case "Delete", "DeleteAll":
 		return "delete"
 	case "Update":
 		return "put"
@@ -48,9 +48,15 @@ func (s *Service) httpPath() string {
 			return path + s.pkURLParams()
 		}
 
-		name := strings.TrimPrefix(s.Name, s.Owner+"sBy")
-		name = strings.TrimPrefix(name, s.Owner+"By")
-		path = path + "/" + toKebabCase(s.Owner) + "/" + trimParentPath(toKebabCase(name))
+		// TD 29.11.22
+		// If we're returning multiple items then put s on the path (e.g. datum-mapping becomes datum-mappings
+		if strings.HasPrefix(s.Name, s.Owner+"sBy") {
+			name := strings.TrimPrefix(s.Name, s.Owner+"sBy")
+			path = path + "/" + toKebabCase(s.Owner) + "s/" + trimParentPath(toKebabCase(name))
+		} else {
+			name := strings.TrimPrefix(s.Name, s.Owner+"By")
+			path = path + "/" + toKebabCase(s.Owner) + "/" + trimParentPath(toKebabCase(name))
+		}
 	}
 	method := s.httpMethod()
 
@@ -59,7 +65,6 @@ func (s *Service) httpPath() string {
 			path = fmt.Sprintf("%s/{%s}", strings.TrimSuffix(path, "/"), lowerFirstCharacter(s.InputNames[0]))
 		} else if len(s.InputMethodNames) == 1 {
 			path = fmt.Sprintf("%s/{%s}", strings.TrimSuffix(path, "/"), lowerFirstCharacter(s.InputMethodNames[0]))
-
 		}
 	}
 	return path

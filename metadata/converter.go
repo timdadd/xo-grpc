@@ -18,13 +18,24 @@ func exprToStr(e ast.Expr) string {
 		return exp.String()
 	case *ast.StarExpr:
 		return "*" + exprToStr(exp.X)
+	case *ast.ChanType:
+		return exprToStr(exp.Value)
 	case *ast.ArrayType:
 		return "[]" + exprToStr(exp.Elt)
+	case *ast.MapType:
+		s := "map[" + exprToStr(exp.Key) + "]" + exprToStr(exp.Value)
+		panic(fmt.Sprintf("%s\n", s))
+	case *ast.Ellipsis:
+		return "[]" + exprToStr(exp.Elt)
+		//
+		//s := "..." + exprToStr(exp.Elt)
+		//panic(fmt.Sprintf("%s\n", s))
 	default:
-		panic(fmt.Sprintf("invalid type %T", exp))
+		panic(fmt.Sprintf("invalid type %T,%T ", exp, e))
 	}
 }
 
+// toProtoType maps the GO type to the equivalent proto type
 func toProtoType(typ string) string {
 	if strings.HasPrefix(typ, "*") {
 		return toProtoType(typ[1:])
@@ -95,8 +106,9 @@ func bindToProto(src, dst, attrName, attrType string) []string {
 			res = append(res, bindToProtoWrappersArray(src, dst, attrName, "Int64")...)
 			break
 		}
-		res = append(res, fmt.Sprintf("if %s.%s.Valid {", src, attrName))
-		res = append(res, fmt.Sprintf("%s.%s = wrapperspb.Int64(%s.%s.Int64) }", dst, camelCaseProto(attrName), src, attrName))
+		res = append(res, fmt.Sprintf("%s.%s = i64PB(%s.%s)", dst, camelCaseProto(attrName), src, attrName))
+		//res = append(res, fmt.Sprintf("if %s.%s.Valid {", src, attrName))
+		//res = append(res, fmt.Sprintf("%s.%s = wrapperspb.Int64(%s.%s.Int64) }", dst, camelCaseProto(attrName), src, attrName))
 	case "sql.NullFloat64":
 		if isArray {
 			res = append(res, fmt.Sprintf("%s.%s = make([]*wrapperspb.DoubleValue, 0)", dst, camelCaseProto(attrName)))
@@ -116,11 +128,13 @@ func bindToProto(src, dst, attrName, attrType string) []string {
 			res = append(res, bindToProtoWrappersArray(src, dst, attrName, "String")...)
 			break
 		}
-		res = append(res, fmt.Sprintf("if %s.%s.Valid {", src, attrName))
-		res = append(res, fmt.Sprintf("%s.%s = wrapperspb.String(%s.%s.String) }", dst, camelCaseProto(attrName), src, attrName))
+		res = append(res, fmt.Sprintf("%s.%s = stringPB(%s.%s)", dst, camelCaseProto(attrName), src, attrName))
+		//res = append(res, fmt.Sprintf("if %s.%s.Valid {", src, attrName))
+		//res = append(res, fmt.Sprintf("%s.%s = wrapperspb.String(%s.%s.String) }", dst, camelCaseProto(attrName), src, attrName))
 	case "sql.NullTime", "pq.NullTime", "mysql.NullTime":
-		res = append(res, fmt.Sprintf("if %s.%s.Valid {", src, attrName))
-		res = append(res, fmt.Sprintf("%s.%s = timestamppb.New(%s.%s.Time) }", dst, camelCaseProto(attrName), src, attrName))
+		res = append(res, fmt.Sprintf("%s.%s = timePB(%s.%s)", dst, camelCaseProto(attrName), src, attrName))
+		//res = append(res, fmt.Sprintf("if %s.%s.Valid {", src, attrName))
+		//res = append(res, fmt.Sprintf("%s.%s = timestamppb.New(%s.%s.Time) }", dst, camelCaseProto(attrName), src, attrName))
 	case "time.Time":
 		res = append(res, fmt.Sprintf("%s.%s = timestamppb.New(%s.%s)", dst, camelCaseProto(attrName), src, attrName))
 	case "xoutil.SqTime":
@@ -169,6 +183,8 @@ func bindToGo(src, dst, attrName, attrType string, newVar bool) []string {
 			res = append(res, bindToGoWrappersArray(src, dst, attrName, attrType, "Bool")...)
 			break
 		}
+		// TD UPDATE loads the original model so has no way of NULL the current value
+		res = append(res, fmt.Sprintf("%s = sql.NullBool{Valid: false}", dst))
 		res = append(res, fmt.Sprintf("if v := %s.Get%s(); v != nil {", src, camelCaseProto(attrName)))
 		res = append(res, fmt.Sprintf("%s = sql.NullBool{Valid: true, Bool: v.Value}", dst))
 		res = append(res, "}")
@@ -180,6 +196,8 @@ func bindToGo(src, dst, attrName, attrType string, newVar bool) []string {
 			res = append(res, bindToGoWrappersArray(src, dst, attrName, attrType, "Int32")...)
 			break
 		}
+		// TD UPDATE loads the original model so has no way of NULL the current value
+		res = append(res, fmt.Sprintf("%s = sql.NullInt32{Valid: false}", dst))
 		res = append(res, fmt.Sprintf("if v := %s.Get%s(); v != nil {", src, camelCaseProto(attrName)))
 		res = append(res, fmt.Sprintf("%s = sql.NullInt32{Valid: true, Int32: v.Value}", dst))
 		res = append(res, "}")
@@ -191,9 +209,12 @@ func bindToGo(src, dst, attrName, attrType string, newVar bool) []string {
 			res = append(res, bindToGoWrappersArray(src, dst, attrName, attrType, "Int64")...)
 			break
 		}
-		res = append(res, fmt.Sprintf("if v := %s.Get%s(); v != nil {", src, camelCaseProto(attrName)))
-		res = append(res, fmt.Sprintf("%s = sql.NullInt64{Valid: true, Int64: v.Value}", dst))
-		res = append(res, "}")
+		// TD UPDATE loads the original model so has no way of NULL the current value
+		res = append(res, fmt.Sprintf("%s = i64SQL(%s.Get%s())", dst, src, camelCaseProto(attrName)))
+		//res = append(res, fmt.Sprintf("%s = sql.NullInt64{}", dst))
+		//res = append(res, fmt.Sprintf("if v := %s.Get%s(); v != nil {", src, camelCaseProto(attrName)))
+		//res = append(res, fmt.Sprintf("%s = sql.NullInt64{Valid: true, Int64: v.Value}", dst))
+		//res = append(res, "}")
 	case "sql.NullFloat64":
 		if newVar {
 			res = append(res, fmt.Sprintf("var %s %s", dst, attrType))
@@ -202,9 +223,13 @@ func bindToGo(src, dst, attrName, attrType string, newVar bool) []string {
 			res = append(res, bindToGoWrappersArray(src, dst, attrName, attrType, "Float64")...)
 			break
 		}
-		res = append(res, fmt.Sprintf("if v := %s.Get%s(); v != nil {", src, camelCaseProto(attrName)))
-		res = append(res, fmt.Sprintf("%s = sql.NullFloat64{Valid: true, Float64: v.Value}", dst))
-		res = append(res, "}")
+		// TD UPDATE loads the original model so has no way of NULL the current value
+		res = append(res, fmt.Sprintf("%s = f64SQL(%s.Get%s())", dst, src, camelCaseProto(attrName)))
+
+		//res = append(res, fmt.Sprintf("%s = sql.NullFloat64{}", dst))
+		//res = append(res, fmt.Sprintf("if v := %s.Get%s(); v != nil {", src, camelCaseProto(attrName)))
+		//res = append(res, fmt.Sprintf("%s = sql.NullFloat64{Valid: true, Float64: v.Value}", dst))
+		//res = append(res, "}")
 	case "sql.NullString":
 		if newVar {
 			res = append(res, fmt.Sprintf("var %s %s", dst, attrType))
@@ -213,20 +238,26 @@ func bindToGo(src, dst, attrName, attrType string, newVar bool) []string {
 			res = append(res, bindToGoWrappersArray(src, dst, attrName, attrType, "String")...)
 			break
 		}
-		res = append(res, fmt.Sprintf("if v := %s.Get%s(); v != nil {", src, camelCaseProto(attrName)))
-		res = append(res, fmt.Sprintf("%s = sql.NullString{Valid: true, String: v.Value}", dst))
-		res = append(res, "}")
+		// TD UPDATE loads the original model so has no way of NULL the current value
+		res = append(res, fmt.Sprintf("%s = stringSQL(%s.Get%s())", dst, src, camelCaseProto(attrName)))
+		//res = append(res, fmt.Sprintf("%s = sql.NullString{}", dst))
+		//res = append(res, fmt.Sprintf("if v := %s.Get%s(); v != nil {", src, camelCaseProto(attrName)))
+		//res = append(res, fmt.Sprintf("%s = sql.NullString{Valid: true, String: v.Value}", dst))
+		//res = append(res, "}")
 
 	case "sql.NullTime", "pq.NullTime", "mysql.NullTime":
 		if newVar {
 			res = append(res, fmt.Sprintf("var %s %s", dst, attrType))
 		}
-		res = append(res, fmt.Sprintf("if v := %s.Get%s(); v != nil {", src, camelCaseProto(attrName)))
-		res = append(res, fmt.Sprintf("if err = v.CheckValid(); err != nil { err = fmt.Errorf(\"invalid %s: %%s%%w\", err.Error(), validation.ErrUserInput)", attrName))
-		res = append(res, "return }")
-		res = append(res, "if t := v.AsTime(); !t.IsZero() {")
-		res = append(res, fmt.Sprintf("%s.Valid = true", dst))
-		res = append(res, fmt.Sprintf("%s.Time = t } }", dst))
+		// TD UPDATE loads the original model so has no way of NULL the current value
+		res = append(res, fmt.Sprintf("%s = timeSQL(%s.Get%s())", dst, src, camelCaseProto(attrName)))
+		//res = append(res, fmt.Sprintf("%s = sql.NullTime{}", dst))
+		//res = append(res, fmt.Sprintf("if v := %s.Get%s(); v != nil {", src, camelCaseProto(attrName)))
+		//res = append(res, fmt.Sprintf("if err = v.CheckValid(); err != nil { err = fmt.Errorf(\"invalid %s: %%s%%w\", err.Error(), validation.ErrUserInput)", attrName))
+		//res = append(res, "return }")
+
+		//res = append(res, fmt.Sprintf("%s.Valid = true", dst))
+		//res = append(res, fmt.Sprintf("%s.Time = v.AsTime() }", dst))
 	case "time.Time":
 		if newVar {
 			res = append(res, fmt.Sprintf("var %s %s", dst, attrType))

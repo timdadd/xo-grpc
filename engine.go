@@ -22,7 +22,7 @@ import (
 var templates embed.FS
 
 func process(def *metadata.Definition, outPath string) error {
-	rootPath := "templates"
+	rootPath := "templates.xo"
 	var templates = os.DirFS(".")
 	return fs.WalkDir(templates, rootPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {

@@ -17,6 +17,7 @@ type Service struct {
 	InputTypes       []string
 	Output           []string
 	IsMethod         bool
+	ReturnReceiver   bool // TD: Should we return the receiver as an output?
 	InputMethodNames []string
 	InputMethodTypes []string
 	HasContext       bool
@@ -24,10 +25,14 @@ type Service struct {
 	Messages map[string]*Message
 }
 
+// pk
 func (s *Service) pk() []string {
+
 	if m, ok := s.Messages[s.Owner]; ok {
+		//fmt.Println("pk", s.Name, strings.Join(m.PkNames, ","))
 		return m.PkNames
 	}
+	fmt.Println("pk", s.Name)
 	return []string{}
 }
 
@@ -110,16 +115,19 @@ func (s *Service) PKEntityParams(prefix string) string {
 	return ""
 }
 
+// RelationshipMethod returns false if MethodName is "Insert", "Update", "Upsert", "Delete"
 func (s *Service) RelationshipMethod() bool {
 	if !s.IsMethod {
 		return false
 	}
 
 	switch s.Name {
-	case "Insert", "Update", "Upsert", "Delete":
+	case "Insert", "Update", "Delete", "Upsert":
 		return false
 	default:
 		return true
+		//// Anything that starts with Update is an Update of the receiver
+		//return !strings.HasPrefix(s.Name, "Update")
 	}
 }
 
@@ -143,8 +151,9 @@ func (s *Service) MethodOutputType() string {
 	}
 }
 
+// ReturnCallDatabase returns the database call into result if the output is not empty
 func (s *Service) ReturnCallDatabase() string {
-	if !s.EmptyOutput() {
+	if !s.EmptyFunctionOutput() {
 		return "result,"
 	}
 	return ""
@@ -185,6 +194,8 @@ func (s *Service) InputGrpc() []string {
 	return res
 }
 
+// OutputGrpc returns the fields needed to create the output
+// TD 15/1/23 Modify so that for ReturnReceiver we use m not result
 func (s *Service) OutputGrpc() []string {
 	res := make([]string, 0)
 
@@ -213,7 +224,12 @@ func (s *Service) OutputGrpc() []string {
 		for _, n := range s.Output {
 			m := s.Messages[strings.TrimPrefix(n, "*")]
 			for i, attr := range m.AttrNames {
-				res = append(res, bindToProto("result", "res", UpperFirstCharacter(attr), m.AttrTypes[i])...)
+				// TD: If we're returning the receiver then use m else result
+				resultIn := "result"
+				if s.ReturnReceiver {
+					resultIn = "m"
+				}
+				res = append(res, bindToProto(resultIn, "res", UpperFirstCharacter(attr), m.AttrTypes[i])...)
 			}
 		}
 		return res
@@ -289,20 +305,28 @@ func (s *Service) hasArrayOutput() bool {
 func (s *Service) ProtoInputs() string {
 	var b strings.Builder
 	var count int
+	//fmt.Println("ProtoInputs", s.Owner, s.Name)
 	if s.RelationshipMethod() {
 		owner := s.Messages[s.Owner]
 		for _, name := range owner.PkNames {
+			//fmt.Println(owner.Name, name)
 			count = count + 1
-			fmt.Fprintf(&b, "\n    %s %s = %d;", toProtoType(owner.attributeTypeByName(name)), lowerFirstCharacter(name), count)
+			fmt.Fprintf(&b, "\n    %s %s = %d;",
+				toProtoType(owner.attributeTypeByName(name)), lowerFirstCharacter(name), count)
 		}
 		if count > 0 {
 			return b.String()
 		}
 	}
+	//fmt.Println("Input Names", strings.Join(s.InputNames, ","))
 	for i, name := range s.InputNames {
+		//fmt.Println("Input Name", i, name)
 		count = count + 1
-		fmt.Fprintf(&b, "\n    %s %s = %d;", toProtoType(s.InputTypes[i]), lowerFirstCharacter(name), count)
+		fmt.Fprintf(&b, "\n    %s %s = %d;",
+			toProtoType(s.InputTypes[i]), lowerFirstCharacter(name), count)
 	}
+	//fmt.Println("Input Method Names", strings.Join(s.InputMethodNames, ","))
+	//fmt.Println("Input Method Types", strings.Join(s.InputMethodTypes, ","))
 	for i, name := range s.InputMethodNames {
 		count = count + 1
 		if s.IsMethod && s.Name == "Update" {
@@ -313,8 +337,10 @@ func (s *Service) ProtoInputs() string {
 				}
 			}
 		}
-		fmt.Fprintf(&b, "\n    %s %s = %d;", toProtoType(s.InputMethodTypes[i]), lowerFirstCharacter(name), count)
+		fmt.Fprintf(&b, "\n    %s %s = %d;",
+			toProtoType(s.InputMethodTypes[i]), lowerFirstCharacter(name), count)
 	}
+	//fmt.Println("End of ProtoInputs", s.Owner, s.Name)
 	return b.String()
 }
 
@@ -323,6 +349,11 @@ func (s *Service) EmptyInput() bool {
 		return false
 	}
 	return true
+}
+
+// EmptyFunctionOutput returns true if the function doesn't return a result
+func (s *Service) EmptyFunctionOutput() bool {
+	return len(s.Output) == 0 || s.ReturnReceiver
 }
 
 func (s *Service) EmptyOutput() bool {

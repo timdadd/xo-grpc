@@ -7,6 +7,8 @@ import (
 	"strings"
 )
 
+// This takes a function declaration and returns the owner and Service
+// the Service summarises the inputs and outputs
 func analyseFunc(fun *ast.FuncDecl, messages map[string]*Message) (owner string, srv *Service) {
 	if !isMethodValid(fun) {
 		return
@@ -19,7 +21,9 @@ func analyseFunc(fun *ast.FuncDecl, messages map[string]*Message) (owner string,
 		Output:     make([]string, 0),
 		IsMethod:   fun.Recv != nil && len(fun.Recv.List) > 0,
 	}
+	//log.Printf("analyseFunc %s, isMethod %t\n", srv.Name, srv.IsMethod)
 	// context is the first parameter and DB is the second parameter
+	// TD: Handle the parameters on the function
 	for i := 0; i < len(fun.Type.Params.List); i++ {
 		p := fun.Type.Params.List[i]
 		if exprToStr(p.Type) == "context.Context" {
@@ -37,23 +41,28 @@ func analyseFunc(fun *ast.FuncDecl, messages map[string]*Message) (owner string,
 	}
 
 	// error is the last result
+	// Handle where the results go
 	for i := 0; i < len(fun.Type.Results.List)-1; i++ {
 		p := fun.Type.Results.List[i]
 		srv.Output = append(srv.Output, adjustType(exprToStr(p.Type), messages))
 	}
 
 	owner = getOwner(fun)
+	// TD The definition of a method is it has a receiver name
+	// TD So the attributes of the receiver have to be unpacked
 	if srv.IsMethod {
 		receiverName := fun.Recv.List[0].Names[0].Name
 		methodAttributes := make([]string, 0)
-		dedup := make(map[string]struct{})
+		deDup := make(map[string]struct{})
+		// TD Only pick up the attributes that are used in the function to simplify the proto message
 		for _, stmt := range fun.Body.List {
 			ast.Inspect(stmt, func(n ast.Node) bool {
 				if selector, ok := n.(*ast.SelectorExpr); ok && fmt.Sprintf("%s", selector.X) == receiverName && firstIsUpper(selector.Sel.Name) {
 					name := selector.Sel.Name
-					if _, ok := dedup[name]; !ok {
+					//fmt.Sprintf("Name:%s\n", name)
+					if _, ok := deDup[name]; !ok {
 						methodAttributes = append(methodAttributes, name)
-						dedup[name] = struct{}{}
+						deDup[name] = struct{}{}
 					}
 					return false
 				}
@@ -67,9 +76,22 @@ func analyseFunc(fun *ast.FuncDecl, messages map[string]*Message) (owner string,
 
 		receiverType := strings.TrimPrefix(exprToStr(fun.Recv.List[0].Type), "*")
 		receiver := messages[receiverType]
-		if srv.Name == "Delete" {
+		// TD: Special code for specific methods
+		switch srv.Name {
+		case "Delete":
 			receiver.PkNames = make([]string, 0)
 			receiver.PkNames = append(receiver.PkNames, methodAttributes...)
+		case "Insert": // TD:Return Receiver so ID is known
+			//	log.Printf("Input %v", fun.Recv.List[0].Type)
+			srv.ReturnReceiver = true
+			//srv.HasCustomOutput()
+			srv.Output = append(srv.Output, fmt.Sprintf("*%s", receiverType))
+			fmt.Println(receiverName, receiverName, receiverType)
+			//if receiverName == "ur" {
+			//	fmt.Println(srv.Output)
+			//	panic(1)
+			//}
+			//srv.Output = append([]string{adjustType(exprToStr(fun.Recv.List[0].Type), messages)}, srv.Output...)
 		}
 		sort.Strings(methodAttributes)
 		methodTypes := make([]string, 0)
@@ -87,6 +109,7 @@ func analyseFunc(fun *ast.FuncDecl, messages map[string]*Message) (owner string,
 		srv.InputMethodTypes = methodTypes
 	}
 	srv.Owner = owner
+	fmt.Println(fun.Name.String(), srv.Output)
 
 	return
 }

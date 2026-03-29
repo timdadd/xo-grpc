@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"log"
 	"sort"
 	"strings"
 )
@@ -15,6 +16,7 @@ type Definition struct {
 	DatabaseDriverName   string
 	ModelsPath           string
 	Packages             []*Package
+	IgnorePackages       map[string]struct{}
 }
 
 func (d *Definition) ProtoImports() []string {
@@ -141,11 +143,16 @@ func (p *Package) importTypes() bool {
 	return false
 }
 
-func ParsePackages(src, module string) ([]*Package, error) {
+// ParsePackages finds all the packages to process
+func ParsePackages(src, module string, ignorePackages map[string]struct{}) ([]*Package, error) {
 	fset := token.NewFileSet()
+	// First of all build an Abstract Syntax Tree for all the files in the directory - should be one package
 	pkgs, err := parser.ParseDir(fset, src, nil, parser.ParseComments)
 	if err != nil {
 		return nil, err
+	}
+	for ignorePkg := range ignorePackages {
+		delete(pkgs, ignorePkg)
 	}
 	if total := len(pkgs); total != 1 {
 		return nil, fmt.Errorf("too many packages: %d", total)
@@ -153,6 +160,7 @@ func ParsePackages(src, module string) ([]*Package, error) {
 
 	var pkgName string
 	var pkg *ast.Package
+	// TD: Get the package name from the pkgs main, we only have one or error above
 	for pkgName, pkg = range pkgs {
 		break
 	}
@@ -161,10 +169,31 @@ func ParsePackages(src, module string) ([]*Package, error) {
 
 	owners := make(map[string][]*Service)
 	for _, file := range pkg.Files {
+		//log.Println("file.Name", file.Name)
+		// Analyse the declarations
+		skipOwner := false
 		for _, n := range file.Decls {
 			if fun, ok := n.(*ast.FuncDecl); ok {
+				//p := getOwner(fun)
+				//// Skip packages we don't want to publish an API for
+				//if _, inMap := ignorePackages[p]; inMap {
+				//	continue
+				//}
+				//log.Println("Function:", fun.Name.Name)
 				owner, srv := analyseFunc(fun, messages)
-				if srv != nil {
+				if _, skipOwner = ignorePackages[owner]; skipOwner {
+					fmt.Println("Ignoring", owner)
+					break
+				}
+
+				if owner == "Services" {
+					log.Println("Found Services, stream?", fun.Name.Name, "Ignoring")
+					//break
+					//log.Println(fun.Name.Name)
+					//continue
+					//os.Exit(1)
+				}
+				if srv != nil && owner != "Services" {
 					srv.Messages = messages
 					if _, ok := owners[owner]; !ok {
 						owners[owner] = make([]*Service, 0)
@@ -174,10 +203,12 @@ func ParsePackages(src, module string) ([]*Package, error) {
 			}
 		}
 	}
-	result := make([]*Package, 0)
+	var result []*Package
 	for owner, services := range owners {
+		//log.Printf("owner:%s\n ", owner)
+		// TD 29.11.22 - remove strings.Compare([i].Name,[j].Name) < 0 from sort
 		sort.SliceStable(services, func(i, j int) bool {
-			return strings.Compare(services[i].Name, services[j].Name) < 0
+			return services[i].Name < services[j].Name
 		})
 		p := Package{
 			Package:    owner,
@@ -187,6 +218,7 @@ func ParsePackages(src, module string) ([]*Package, error) {
 			Messages:   messages,
 			Services:   services,
 		}
+		//log.Printf(fmt.Sprintf("Owner: %s, Package:%s, srcPath:%s, Messages:%v, Services :%v", owner, p.Package, p.SrcPath, p.Messages, p.Services))
 		setReaderEntity(&p)
 		result = append(result, &p)
 	}
@@ -196,26 +228,28 @@ func ParsePackages(src, module string) ([]*Package, error) {
 	return result, nil
 }
 
+// setReaderEntity
 func setReaderEntity(p *Package) {
 	m, ok := p.Messages[p.Package]
 	if !ok {
 		return
 	}
-
+	//log.Printf("setReaderEntity Package %s", p.Package)
 	for _, s := range p.Services {
-		if len(s.Output) != 1 {
+		if len(s.Output) != 1 { // TD:Ignore services with no output
 			continue
 		}
-		if m.Name != strings.TrimPrefix(s.Output[0], "*") {
+		if m.Name != strings.TrimPrefix(s.Output[0], "*") { // Ignore services that aren't a struct (e.g. *Datum)
 			continue
 		}
-		if !strings.HasPrefix(s.Name, p.Package+"By") {
+		if !strings.HasPrefix(s.Name, p.Package+"By") { // services that are getters e.g. DatumBy...
 			continue
 		}
 		if len(m.PkNames) != len(s.InputNames) {
 			continue
 		}
 		var incompatibleInterface bool
+		//log.Println("Incompatible Interface Check", m.PkNames, s.InputNames)
 		for _, pk := range m.PkNames {
 			pkLower := strings.ToLower(pk)
 			var found bool
@@ -231,8 +265,10 @@ func setReaderEntity(p *Package) {
 			}
 		}
 		if incompatibleInterface {
+			//log.Printf("**Incompatible Interface Package:%s, Service:%s Output:%s", p.Package, s.Name, s.Output[0])
 			continue
 		}
+		//log.Printf("Compatible Interface Package:%s, Service:%s Output:%s", p.Package, s.Name, s.Output[0])
 		m.ReaderService = s
 		return
 	}
